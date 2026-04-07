@@ -1,0 +1,46 @@
+# AWS Region
+aws_region = "ap-southeast-1"
+
+# EC2 Instance Type (recommended default for Selenium + noVNC)
+# Other options: t3.medium (cheaper), t3.xlarge (stronger)
+instance_type = "t3.large"
+
+# EC2 Key Pair Name - REQUIRED
+# Replace with your actual key pair name
+key_pair_name = "your-key-pair-name"
+
+# VPC and Subnet (optional - uses default if not specified)
+# vpc_id   = "vpc-xxxxxxxx"
+# subnet_id = "subnet-xxxxxxxx"
+
+# Root volume size in GB
+root_volume_size = 30
+
+# SSH Access - CHANGE THIS FOR SECURITY!
+# Restrict to your IP address instead of 0.0.0.0/0
+allowed_ssh_cidrs = ["0.0.0.0/0"]  # ⚠️ Should be your IP like ["203.0.113.0/32"]
+
+# Application Access (Selenium, noVNC) - CHANGE THIS FOR SECURITY!
+allowed_app_cidrs = ["0.0.0.0/0"]  # ⚠️ Should be your IP like ["203.0.113.0/32"]
+
+# GitHub Repository URL (required)
+# Example: https://github.com/yourusername/selenium-webdriver-docker.git
+github_repo_url = "https://github.com/yourusername/your-repo.git"
+
+# Git branch (main, master, develop, etc.)
+repo_branch = "main"
+
+# Environment variables for Docker Compose
+environment_vars = {
+  SELENIUM_REMOTE_URL = "http://selenium:4444"
+  TARGET_URL          = "https://www.google.com/"
+  WAIT_SECONDS        = "10"
+}
+
+# Common tags for all resources
+common_tags = {
+  Project     = "selenium-webdriver"
+  Environment = "dev"
+  ManagedBy   = "Terraform"
+  Owner       = "your-name"
+}

@@ -1,0 +1,31 @@
+services:
+  selenium:
+    image: selenium/standalone-chrome:latest
+    container_name: selenium-chrome
+    shm_size: "2gb"
+    environment:
+      - SE_VNC_NO_PASSWORD=1
+    ports:
+      - "4444:4444"
+      - "7901:7900"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4444/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: automation-web
+    ports:
+      - "5000:5000"
+    depends_on:
+      selenium:
+        condition: service_healthy
+    environment:
+      - SELENIUM_REMOTE_URL=http://selenium:4444
+      - FLASK_ENV=production
+    restart: unless-stopped
