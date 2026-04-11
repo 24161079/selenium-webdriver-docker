@@ -92,7 +92,7 @@ def run_pipeline(stop_event=None, on_driver_ready: Callable | None = None) -> No
         ensure_not_stopped()
         print("\\n========== FLOW 1: SCORE INPUT (5.4.1) ==========")
         select_score_input(driver)
-        # # download_all_templates(driver, "score-templates")
+        download_all_templates(driver, "score-templates")
         # process_data()
         # # upload_files(driver, "score-templates")
 

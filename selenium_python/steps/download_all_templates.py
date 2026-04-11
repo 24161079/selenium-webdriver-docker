@@ -1,4 +1,5 @@
 import time
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -20,12 +21,34 @@ from ..constants import (
 from ..utils.combobox_helper import ComboBoxHelper
 
 
+STEPS_LOG_FILE = os.environ.get("AUTOMATION_STEPS_LOG_FILE", "/app/logs/automation_steps.log")
+
+
+def _resolve_data_root() -> Path:
+    configured_root = os.environ.get("AUTOMATION_DATA_DIR", "").strip()
+    if configured_root:
+        return Path(configured_root)
+    return Path(__file__).resolve().parent.parent
+
+
+def _write_step_log(message: str) -> None:
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{timestamp}] {message}"
+    try:
+        os.makedirs(os.path.dirname(STEPS_LOG_FILE), exist_ok=True)
+        with open(STEPS_LOG_FILE, "a", encoding="utf-8") as log_file:
+            log_file.write(line + "\n")
+    except Exception:
+        pass
+
+
 def download_all_templates(driver, folder_name: str) -> None:
     print(MESSAGES.START_DOWNLOAD)
 
-    download_dir = Path(__file__).resolve().parent.parent / folder_name
+    download_dir = _resolve_data_root() / folder_name
     download_dir.mkdir(parents=True, exist_ok=True)
     print(msg_download_dir(download_dir))
+    _write_step_log(f"DOWNLOAD_START folder={folder_name} dir={download_dir}")
 
     _set_download_dir(driver, download_dir)
     _wait_for_modal_load(driver)
@@ -50,6 +73,7 @@ def download_all_templates(driver, folder_name: str) -> None:
 
         total_downloaded = _download_all_combinations(driver, combo_box_ids, download_dir)
         print(msg_complete(total_downloaded))
+        _write_step_log(f"DOWNLOAD_COMPLETE folder={folder_name} count={total_downloaded} dir={download_dir}")
     finally:
         driver.switch_to.default_content()
 
@@ -171,13 +195,16 @@ def _download_file(driver, download_dir: Path) -> bool:
             if new_files:
                 newest = sorted(new_files)[-1]
                 print(f"      {msg_downloaded(newest)}")
+                _write_step_log(f"DOWNLOAD_OK file={newest} dir={download_dir}")
                 return True
             time.sleep(0.2)
 
         print(f"      {MESSAGES.NO_FILE}")
+        _write_step_log(f"DOWNLOAD_TIMEOUT dir={download_dir}")
         return False
     except Exception as exc:
         print(f"      {msg_download_error(str(exc))}")
+        _write_step_log(f"DOWNLOAD_ERROR error={exc} dir={download_dir}")
         return False
 
 

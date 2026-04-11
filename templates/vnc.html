@@ -35,7 +35,7 @@
     </style>
 </head>
 <body data-vnc-password="{{ vnc_password | e }}">
-    <div class="status">VNC đang hoạt động. Nếu không có hoạt động trên VNC, hệ thống sẽ tự động dừng sau 10 giây.</div>
+    <div class="status">VNC đang hoạt động. Nếu không có heartbeat từ trang này, hệ thống sẽ tự động dừng sau {{ vnc_idle_timeout_seconds }} giây.</div>
     <iframe class="frame" src="{{ novnc_url }}"></iframe>
 
     <script>
@@ -47,6 +47,8 @@
                 await fetch(heartbeatUrl, {
                     method: 'POST',
                     headers: { 'X-VNC-Password': vncPassword },
+                    cache: 'no-store',
+                    keepalive: true,
                 });
             } catch (error) {
                 console.error('Heartbeat failed:', error);

@@ -28,4 +28,6 @@ services:
     environment:
       - SELENIUM_REMOTE_URL=http://selenium:4444
       - FLASK_ENV=production
+      - AUTOMATION_DATA_DIR=/tmp/automation-data
+      - AUTOMATION_STEPS_LOG_FILE=/app/logs/automation_steps.log
     restart: unless-stopped

@@ -201,7 +201,19 @@ cd /app
 docker compose ps
 docker compose logs -f
 docker compose logs web -f
+
+# Verify downloaded template logs
+docker compose exec -T web sh -lc 'tail -n 200 /app/logs/automation_steps.log'
+
+# Verify downloaded files stored in temporary directory
+docker compose exec -T web sh -lc 'find /tmp/automation-data -maxdepth 2 -type f | head -n 100'
 ```
+
+## Data Storage Note
+
+- Downloaded files are stored in temporary container storage at /tmp/automation-data.
+- This data is available while the current container exists.
+- If the container is recreated (for example docker compose up -d --build), temporary files will be removed.
 
 ## Destroy (Stop Charges)
 

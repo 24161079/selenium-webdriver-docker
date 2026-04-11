@@ -350,7 +350,7 @@
                 setRunningState(Boolean(data.running));
 
                 if (data.running) {
-                    result.textContent = 'Chương trình đang chạy. Nếu không có hoạt động gì trên VNC, hệ thống sẽ tự dừng sau 10 giây.';
+                    result.textContent = 'Chương trình đang chạy. Nếu không có heartbeat từ trang VNC, hệ thống sẽ tự dừng sau {{ vnc_idle_timeout_seconds }} giây.';
                 }
             } catch (error) {
                 console.error('Status check failed:', error);

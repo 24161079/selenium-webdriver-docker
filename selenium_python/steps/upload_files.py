@@ -1,4 +1,5 @@
 import time
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -25,10 +26,17 @@ from ..constants import (
 from ..utils.combobox_helper import ComboBoxHelper
 
 
+def _resolve_data_root() -> Path:
+    configured_root = os.environ.get("AUTOMATION_DATA_DIR", "").strip()
+    if configured_root:
+        return Path(configured_root)
+    return Path(__file__).resolve().parent.parent
+
+
 def upload_files(driver, folder_name: str) -> None:
     print(MESSAGES.UPLOAD_START)
 
-    processed_dir = Path(__file__).resolve().parent.parent / folder_name
+    processed_dir = _resolve_data_root() / folder_name
     processed_dir.mkdir(parents=True, exist_ok=True)
     print(msg_upload_dir(processed_dir))
 

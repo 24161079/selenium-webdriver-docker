@@ -21,8 +21,10 @@ current_driver_lock = threading.Lock()
 job_started_at = 0.0
 last_heartbeat_at = 0.0
 current_vnc_password = None
+has_valid_heartbeat = False
 
-VNC_IDLE_TIMEOUT_SECONDS = 10
+VNC_IDLE_TIMEOUT_SECONDS = int(os.environ.get("VNC_IDLE_TIMEOUT_SECONDS", "90"))
+VNC_STARTUP_GRACE_SECONDS = int(os.environ.get("VNC_STARTUP_GRACE_SECONDS", "300"))
 MAX_JOB_SECONDS = 1800
 WATCHDOG_POLL_SECONDS = 1
 RUNTIME_LOG_FILE = "/app/logs/automation_runtime.log"
@@ -166,11 +168,14 @@ def watchdog_loop() -> None:
 
             started = job_started_at
             heartbeat = last_heartbeat_at
+            valid_heartbeat = has_valid_heartbeat
 
         if now - started > MAX_JOB_SECONDS:
             reason = "max_runtime_reached"
-        elif heartbeat > 0 and now - heartbeat > VNC_IDLE_TIMEOUT_SECONDS:
+        elif valid_heartbeat and heartbeat > 0 and now - heartbeat > VNC_IDLE_TIMEOUT_SECONDS:
             reason = "viewer_no_heartbeat"
+        elif not valid_heartbeat and now - started > VNC_STARTUP_GRACE_SECONDS:
+            reason = "viewer_not_connected"
 
         if reason:
             request_stop(reason)
@@ -181,7 +186,7 @@ watchdog_thread.start()
 
 
 def run_google_test(stop_event: threading.Event) -> None:
-    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password
+    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password, has_valid_heartbeat
 
     try:
         run_pipeline(stop_event=stop_event, on_driver_ready=_set_current_driver)
@@ -202,11 +207,12 @@ def run_google_test(stop_event: threading.Event) -> None:
         job_started_at = 0.0
         last_heartbeat_at = 0.0
         current_vnc_password = None
+        has_valid_heartbeat = False
 
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", vnc_idle_timeout_seconds=VNC_IDLE_TIMEOUT_SECONDS)
 
 
 @app.route("/vnc", methods=["GET"])
@@ -220,17 +226,23 @@ def vnc_page():
     if not _is_valid_vnc_password(password):
         return render_template("vnc_auth.html", message="Mat khau VNC khong dung."), 401
 
+    with active_jobs_lock:
+        global has_valid_heartbeat, last_heartbeat_at
+        has_valid_heartbeat = True
+        last_heartbeat_at = time.monotonic()
+
     host = request.host.split(":")[0]
     return render_template(
         "vnc.html",
         novnc_url=_build_novnc_url(host),
         vnc_password=password,
+        vnc_idle_timeout_seconds=VNC_IDLE_TIMEOUT_SECONDS,
     )
 
 
 @app.route("/run", methods=["POST"])
 def run():
-    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password
+    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password, has_valid_heartbeat
     host = request.host.split(":")[0]
     novnc_url = _build_vnc_page_url(host)
 
@@ -250,8 +262,9 @@ def run():
         current_stop_event = threading.Event()
         current_thread = threading.Thread(target=run_google_test, args=(current_stop_event,), daemon=True)
         job_started_at = time.monotonic()
-        last_heartbeat_at = time.monotonic()
+        last_heartbeat_at = 0.0
         current_vnc_password = _generate_vnc_password()
+        has_valid_heartbeat = False
         _write_runtime_log("RUN_STARTED")
 
     current_thread.start()
@@ -289,7 +302,7 @@ def status():
 
 @app.route("/heartbeat", methods=["POST"])
 def heartbeat():
-    global last_heartbeat_at
+    global last_heartbeat_at, has_valid_heartbeat
 
     password = request.headers.get("X-VNC-Password", "") or request.args.get("password", "") or (request.get_json(silent=True) or {}).get("password", "")
 
@@ -302,6 +315,7 @@ def heartbeat():
         return jsonify({"status": "unauthorized", "message": "Mat khau VNC khong hop le."}), 401
 
     with active_jobs_lock:
+        has_valid_heartbeat = True
         last_heartbeat_at = time.monotonic()
 
     _write_runtime_log("HEARTBEAT ok")
