@@ -60,11 +60,24 @@ def select_comment_input(driver) -> None:
 
 def build_driver() -> webdriver.Remote:
     options = Options()
+    download_dir = os.environ.get("DOWNLOAD_ROOT", "/home/seluser/Downloads")
+    prefs = {
+        "download.default_directory": download_dir,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True,
+        "profile.default_content_settings.popups": 0,
+        "profile.default_content_setting_values.automatic_downloads": 1,
+    }
+
     if CONFIG["browser_options"]["headless"]:
         options.add_argument("--headless=new")
 
     options.add_argument("--start-maximized")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-popup-blocking")
+
+    options.add_experimental_option("prefs", prefs)
 
     for arg in CONFIG["browser_options"]["args"]:
         options.add_argument(arg)
