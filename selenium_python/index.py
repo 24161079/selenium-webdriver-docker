@@ -71,8 +71,49 @@ def build_driver() -> webdriver.Remote:
     for arg in CONFIG["browser_options"]["args"]:
         options.add_argument(arg)
 
+    download_root = os.environ.get("DOWNLOAD_ROOT", "/home/seluser/Downloads")
+    Path(download_root).mkdir(parents=True, exist_ok=True)
+    try:
+        # Shared volume can be created with restrictive perms on cloud hosts.
+        os.chmod(download_root, 0o777)
+    except Exception as exc:
+        print(f"[WARN] Could not chmod download root {download_root}: {exc}")
+
+    options.add_experimental_option(
+        "prefs",
+        {
+            "download.default_directory": download_root,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "profile.default_content_settings.popups": 0,
+            "safebrowsing.enabled": True,
+        },
+    )
+
     selenium_url = os.environ.get("SELENIUM_REMOTE_URL", "http://selenium:4444/wd/hub")
     driver = webdriver.Remote(command_executor=selenium_url, options=options)
+
+    try:
+        driver.execute_cdp_cmd(
+            "Browser.setDownloadBehavior",
+            {
+                "behavior": "allow",
+                "downloadPath": download_root,
+                "eventsEnabled": True,
+            },
+        )
+    except Exception:
+        try:
+            driver.execute_cdp_cmd(
+                "Page.setDownloadBehavior",
+                {
+                    "behavior": "allow",
+                    "downloadPath": download_root,
+                },
+            )
+        except Exception as exc:
+            print(f"[WARN] Could not set download behavior: {exc}")
+
     driver.maximize_window()
 
     return driver

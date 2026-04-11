@@ -3,8 +3,6 @@ import time
 from pathlib import Path
 from typing import Optional
 
-import boto3
-from botocore.exceptions import BotoCoreError, ClientError
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -23,36 +21,12 @@ from ..constants import (
 from ..utils.combobox_helper import ComboBoxHelper
 
 
-def _build_s3_context() -> tuple[Optional[object], str, str]:
-    bucket = os.environ.get("S3_BUCKET", "").strip()
-    key_prefix = os.environ.get("S3_KEY_PREFIX", "selenium-templates").strip("/")
-
-    if not bucket:
-        return None, "", key_prefix
-
-    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
-    client = boto3.client("s3", region_name=region) if region else boto3.client("s3")
-    return client, bucket, key_prefix
-
-
-def _resolve_session_folder() -> str:
-    return os.environ.get("SESSION_FOLDER_NAME", "session-unknown").strip() or "session-unknown"
-
-
 def download_all_templates(driver, folder_name: str) -> None:
     print(MESSAGES.START_DOWNLOAD)
 
     download_root = Path(os.environ.get("DOWNLOAD_ROOT", "/downloads"))
     download_root.mkdir(parents=True, exist_ok=True)
     print(msg_download_dir(download_root))
-
-    s3_client, s3_bucket, s3_prefix = _build_s3_context()
-    session_folder = _resolve_session_folder()
-
-    if s3_client:
-        print(f"S3 upload enabled: bucket={s3_bucket}, prefix={s3_prefix}/{session_folder}/{folder_name}")
-    else:
-        print("S3 upload disabled: missing S3_BUCKET env")
 
     _wait_for_modal_load(driver)
 
@@ -79,10 +53,6 @@ def download_all_templates(driver, folder_name: str) -> None:
             combo_box_ids,
             download_root,
             folder_name,
-            session_folder,
-            s3_client,
-            s3_bucket,
-            s3_prefix,
         )
         print(msg_complete(total_downloaded))
     finally:
@@ -142,10 +112,6 @@ def _download_all_combinations(
     combo_box_ids,
     download_dir: Path,
     folder_name: str,
-    session_folder: str,
-    s3_client,
-    s3_bucket: str,
-    s3_prefix: str,
 ) -> int:
     helper = ComboBoxHelper(driver)
     total_downloaded = 0
@@ -174,14 +140,14 @@ def _download_all_combinations(
                 helper.select_item(combo_box_ids.subject, subject["text"])
 
                 time.sleep(TIMEOUTS["before_download"])
-                if _download_file(driver, download_dir, folder_name, session_folder, s3_client, s3_bucket, s3_prefix):
+                if _download_file(driver, download_dir, folder_name):
                     total_downloaded += 1
                 time.sleep(TIMEOUTS["between_downloads"])
 
     return total_downloaded
 
 
-def _download_file(driver, download_dir: Path, folder_name: str, session_folder: str, s3_client, s3_bucket: str, s3_prefix: str) -> bool:
+def _download_file(driver, download_dir: Path, folder_name: str) -> bool:
     before_files = {p.name for p in download_dir.glob("*")}
 
     try:
@@ -200,10 +166,6 @@ def _download_file(driver, download_dir: Path, folder_name: str, session_folder:
             if new_files:
                 newest = sorted(new_files)[-1]
                 print(f"      {msg_downloaded(newest)}")
-                local_path = download_dir / newest
-                if s3_client and s3_bucket:
-                    if not _upload_to_s3(s3_client, s3_bucket, s3_prefix, session_folder, folder_name, local_path):
-                        return False
                 return True
             time.sleep(0.2)
 
@@ -211,19 +173,6 @@ def _download_file(driver, download_dir: Path, folder_name: str, session_folder:
         return False
     except Exception as exc:
         print(f"      {msg_download_error(str(exc))}")
-        return False
-
-
-def _upload_to_s3(s3_client, bucket: str, key_prefix: str, session_folder: str, folder_name: str, local_path: Path) -> bool:
-    relative_key = f"{session_folder}/{folder_name}/{local_path.name}"
-    s3_key = f"{key_prefix}/{relative_key}" if key_prefix else relative_key
-
-    try:
-        s3_client.upload_file(str(local_path), bucket, s3_key)
-        print(f"      ✓ Uploaded to S3: s3://{bucket}/{s3_key}")
-        return True
-    except (ClientError, BotoCoreError, Exception) as exc:
-        print(f"      ✗ S3 upload error: {exc}")
         return False
 
 
