@@ -57,11 +57,8 @@ This runs `terraform destroy` and will remove EC2/EIP, so URL will change on nex
 To run the app on your machine, use Docker Compose from the project root:
 
 ```bash
-export AWS_REGION=ap-southeast-1
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-export S3_BUCKET=your-existing-bucket
-export S3_KEY_PREFIX=selenium-templates
+cp .env.example .env
+# Edit .env and fill AWS credentials + S3_BUCKET
 docker compose up -d --build
 ```
 
@@ -76,6 +73,8 @@ If you only want the Flask app without Docker, you still need the Selenium conta
 docker compose up -d selenium
 export SELENIUM_REMOTE_URL=http://localhost:4444
 export AWS_REGION=ap-southeast-1
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
 export S3_BUCKET=your-existing-bucket
 python app.py
 ```

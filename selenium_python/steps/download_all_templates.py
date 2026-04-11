@@ -42,7 +42,8 @@ def _resolve_session_folder() -> str:
 def download_all_templates(driver, folder_name: str) -> None:
     print(MESSAGES.START_DOWNLOAD)
 
-    download_dir = Path(__file__).resolve().parent.parent / folder_name
+    download_root = Path(os.environ.get("DOWNLOAD_ROOT", "/downloads"))
+    download_dir = download_root / folder_name
     download_dir.mkdir(parents=True, exist_ok=True)
     print(msg_download_dir(download_dir))
 
