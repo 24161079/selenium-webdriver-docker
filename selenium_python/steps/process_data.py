@@ -1,5 +1,4 @@
 import re
-import os
 from pathlib import Path
 
 import openpyxl
@@ -12,17 +11,10 @@ except ImportError:
 from ..app_types import StudentData
 
 
-def _resolve_data_root() -> Path:
-    configured_root = os.environ.get("AUTOMATION_DATA_DIR", "").strip()
-    if configured_root:
-        return Path(configured_root)
-    return Path(__file__).resolve().parent.parent
-
-
 def process_data() -> None:
     print("=== Starting data processing ===")
 
-    root_dir = _resolve_data_root()
+    root_dir = Path(__file__).resolve().parent.parent
     score_template_dir = root_dir / "score-templates"
     comment_template_dir = root_dir / "comment-templates"
     input_dir = root_dir / "inputs"

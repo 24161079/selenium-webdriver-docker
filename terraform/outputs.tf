@@ -38,6 +38,16 @@ output "ssh_command" {
   value       = "ssh -i <your-key.pem> ubuntu@${aws_eip.selenium.public_ip}"
 }
 
+output "s3_bucket_name" {
+  description = "S3 bucket used for downloaded templates"
+  value       = aws_s3_bucket.templates.bucket
+}
+
+output "s3_key_prefix" {
+  description = "S3 object prefix used for downloaded templates"
+  value       = var.s3_key_prefix
+}
+
 output "docker_compose_logs_command" {
   description = "Command to view Docker Compose logs"
   value       = "ssh -i <your-key.pem> ubuntu@${aws_eip.selenium.public_ip} 'cd /app && docker compose logs -f'"

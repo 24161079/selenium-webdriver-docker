@@ -3,6 +3,7 @@ import time
 import secrets
 import string
 import os
+import hashlib
 from urllib import error as url_error
 from urllib import request as url_request
 
@@ -21,6 +22,7 @@ current_driver_lock = threading.Lock()
 job_started_at = 0.0
 last_heartbeat_at = 0.0
 current_vnc_password = None
+current_session_folder = None
 has_valid_heartbeat = False
 
 VNC_IDLE_TIMEOUT_SECONDS = int(os.environ.get("VNC_IDLE_TIMEOUT_SECONDS", "90"))
@@ -80,6 +82,11 @@ def _force_delete_remote_session(session_id: str | None) -> bool:
 def _generate_vnc_password(length: int = 10) -> str:
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _build_session_folder(password: str) -> str:
+    digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return f"session-{digest[:12]}"
 
 
 def _is_valid_vnc_password(candidate: str | None) -> bool:
@@ -186,7 +193,7 @@ watchdog_thread.start()
 
 
 def run_google_test(stop_event: threading.Event) -> None:
-    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password, has_valid_heartbeat
+    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password, current_session_folder, has_valid_heartbeat
 
     try:
         run_pipeline(stop_event=stop_event, on_driver_ready=_set_current_driver)
@@ -207,6 +214,8 @@ def run_google_test(stop_event: threading.Event) -> None:
         job_started_at = 0.0
         last_heartbeat_at = 0.0
         current_vnc_password = None
+        current_session_folder = None
+        os.environ.pop("SESSION_FOLDER_NAME", None)
         has_valid_heartbeat = False
 
 
@@ -242,7 +251,7 @@ def vnc_page():
 
 @app.route("/run", methods=["POST"])
 def run():
-    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password, has_valid_heartbeat
+    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password, current_session_folder, has_valid_heartbeat
     host = request.host.split(":")[0]
     novnc_url = _build_vnc_page_url(host)
 
@@ -264,6 +273,8 @@ def run():
         job_started_at = time.monotonic()
         last_heartbeat_at = 0.0
         current_vnc_password = _generate_vnc_password()
+        current_session_folder = _build_session_folder(current_vnc_password)
+        os.environ["SESSION_FOLDER_NAME"] = current_session_folder
         has_valid_heartbeat = False
         _write_runtime_log("RUN_STARTED")
 

@@ -1,8 +1,10 @@
-import time
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -21,34 +23,36 @@ from ..constants import (
 from ..utils.combobox_helper import ComboBoxHelper
 
 
-STEPS_LOG_FILE = os.environ.get("AUTOMATION_STEPS_LOG_FILE", "/app/logs/automation_steps.log")
+def _build_s3_context() -> tuple[Optional[object], str, str]:
+    bucket = os.environ.get("S3_BUCKET", "").strip()
+    key_prefix = os.environ.get("S3_KEY_PREFIX", "selenium-templates").strip("/")
+
+    if not bucket:
+        return None, "", key_prefix
+
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+    client = boto3.client("s3", region_name=region) if region else boto3.client("s3")
+    return client, bucket, key_prefix
 
 
-def _resolve_data_root() -> Path:
-    configured_root = os.environ.get("AUTOMATION_DATA_DIR", "").strip()
-    if configured_root:
-        return Path(configured_root)
-    return Path(__file__).resolve().parent.parent
-
-
-def _write_step_log(message: str) -> None:
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{timestamp}] {message}"
-    try:
-        os.makedirs(os.path.dirname(STEPS_LOG_FILE), exist_ok=True)
-        with open(STEPS_LOG_FILE, "a", encoding="utf-8") as log_file:
-            log_file.write(line + "\n")
-    except Exception:
-        pass
+def _resolve_session_folder() -> str:
+    return os.environ.get("SESSION_FOLDER_NAME", "session-unknown").strip() or "session-unknown"
 
 
 def download_all_templates(driver, folder_name: str) -> None:
     print(MESSAGES.START_DOWNLOAD)
 
-    download_dir = _resolve_data_root() / folder_name
+    download_dir = Path(__file__).resolve().parent.parent / folder_name
     download_dir.mkdir(parents=True, exist_ok=True)
     print(msg_download_dir(download_dir))
-    _write_step_log(f"DOWNLOAD_START folder={folder_name} dir={download_dir}")
+
+    s3_client, s3_bucket, s3_prefix = _build_s3_context()
+    session_folder = _resolve_session_folder()
+
+    if s3_client:
+        print(f"S3 upload enabled: bucket={s3_bucket}, prefix={s3_prefix}/{session_folder}/{folder_name}")
+    else:
+        print("S3 upload disabled: missing S3_BUCKET env")
 
     _set_download_dir(driver, download_dir)
     _wait_for_modal_load(driver)
@@ -71,9 +75,17 @@ def download_all_templates(driver, folder_name: str) -> None:
         print(f"Class ComboBox ID: {combo_box_ids.class_room}")
         print(f"Subject ComboBox ID: {combo_box_ids.subject}")
 
-        total_downloaded = _download_all_combinations(driver, combo_box_ids, download_dir)
+        total_downloaded = _download_all_combinations(
+            driver,
+            combo_box_ids,
+            download_dir,
+            folder_name,
+            session_folder,
+            s3_client,
+            s3_bucket,
+            s3_prefix,
+        )
         print(msg_complete(total_downloaded))
-        _write_step_log(f"DOWNLOAD_COMPLETE folder={folder_name} count={total_downloaded} dir={download_dir}")
     finally:
         driver.switch_to.default_content()
 
@@ -141,7 +153,16 @@ def _find_combo_box_ids(driver):
     return ComboBoxHelper.find_combo_box_ids(combo_box_info, COMBO_ID_PATTERNS)
 
 
-def _download_all_combinations(driver, combo_box_ids, download_dir: Path) -> int:
+def _download_all_combinations(
+    driver,
+    combo_box_ids,
+    download_dir: Path,
+    folder_name: str,
+    session_folder: str,
+    s3_client,
+    s3_bucket: str,
+    s3_prefix: str,
+) -> int:
     helper = ComboBoxHelper(driver)
     total_downloaded = 0
 
@@ -149,7 +170,7 @@ def _download_all_combinations(driver, combo_box_ids, download_dir: Path) -> int
     print(f"Found {len(grade_items)} grades")
 
     for grade in grade_items:
-        print(f"\\n--- Grade: {grade['text']} ---")
+        print(f"\n--- Grade: {grade['text']} ---")
         helper.select_item(combo_box_ids.grade, grade["text"])
 
         time.sleep(TIMEOUTS["after_select"])
@@ -169,15 +190,15 @@ def _download_all_combinations(driver, combo_box_ids, download_dir: Path) -> int
                 helper.select_item(combo_box_ids.subject, subject["text"])
 
                 time.sleep(TIMEOUTS["before_download"])
-                if _download_file(driver, download_dir):
+                if _download_file(driver, download_dir, folder_name, session_folder, s3_client, s3_bucket, s3_prefix):
                     total_downloaded += 1
                 time.sleep(TIMEOUTS["between_downloads"])
 
     return total_downloaded
 
 
-def _download_file(driver, download_dir: Path) -> bool:
-    before_files = {p.name for p in download_dir.glob('*')}
+def _download_file(driver, download_dir: Path, folder_name: str, session_folder: str, s3_client, s3_bucket: str, s3_prefix: str) -> bool:
+    before_files = {p.name for p in download_dir.glob("*")}
 
     try:
         button = _find_download_button(driver)
@@ -190,21 +211,35 @@ def _download_file(driver, download_dir: Path) -> bool:
 
         deadline = time.time() + TIMEOUTS["download_event"]
         while time.time() < deadline:
-            current_files = {p.name for p in download_dir.glob('*') if not p.name.endswith('.crdownload')}
+            current_files = {p.name for p in download_dir.glob("*") if not p.name.endswith(".crdownload")}
             new_files = current_files - before_files
             if new_files:
                 newest = sorted(new_files)[-1]
                 print(f"      {msg_downloaded(newest)}")
-                _write_step_log(f"DOWNLOAD_OK file={newest} dir={download_dir}")
+                local_path = download_dir / newest
+                if s3_client and s3_bucket:
+                    if not _upload_to_s3(s3_client, s3_bucket, s3_prefix, session_folder, folder_name, local_path):
+                        return False
                 return True
             time.sleep(0.2)
 
         print(f"      {MESSAGES.NO_FILE}")
-        _write_step_log(f"DOWNLOAD_TIMEOUT dir={download_dir}")
         return False
     except Exception as exc:
         print(f"      {msg_download_error(str(exc))}")
-        _write_step_log(f"DOWNLOAD_ERROR error={exc} dir={download_dir}")
+        return False
+
+
+def _upload_to_s3(s3_client, bucket: str, key_prefix: str, session_folder: str, folder_name: str, local_path: Path) -> bool:
+    relative_key = f"{session_folder}/{folder_name}/{local_path.name}"
+    s3_key = f"{key_prefix}/{relative_key}" if key_prefix else relative_key
+
+    try:
+        s3_client.upload_file(str(local_path), bucket, s3_key)
+        print(f"      ✓ Uploaded to S3: s3://{bucket}/{s3_key}")
+        return True
+    except (ClientError, BotoCoreError, Exception) as exc:
+        print(f"      ✗ S3 upload error: {exc}")
         return False
 
 

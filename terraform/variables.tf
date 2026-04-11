@@ -63,6 +63,18 @@ variable "instance_profile_name" {
   default     = ""
 }
 
+variable "s3_bucket_name" {
+  description = "Optional S3 bucket name for downloaded templates"
+  type        = string
+  default     = ""
+}
+
+variable "s3_key_prefix" {
+  description = "S3 key prefix under which session folders will be stored"
+  type        = string
+  default     = "selenium-templates"
+}
+
 variable "environment_vars" {
   description = "Environment variables for Docker Compose"
   type        = map(string)

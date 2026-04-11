@@ -26,7 +26,8 @@ What this script does automatically:
 3. Runs `terraform init` and checks if deployment already exists.
 4. If deployment exists: updates source code in-place on EC2 and restarts Docker app (URL unchanged).
 5. If deployment does not exist: detects your public IP, gets default VPC/subnet, writes tfvars, and runs `terraform apply`.
-6. Prints `web_app_url` and `novnc_url`.
+6. Creates the S3 bucket for downloaded templates and grants EC2 read/write access.
+7. Prints `web_app_url`, `novnc_url`, and the S3 bucket name.
 
 Important behavior:
 
@@ -56,6 +57,11 @@ This runs `terraform destroy` and will remove EC2/EIP, so URL will change on nex
 To run the app on your machine, use Docker Compose from the project root:
 
 ```bash
+export AWS_REGION=ap-southeast-1
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export S3_BUCKET=your-existing-bucket
+export S3_KEY_PREFIX=selenium-templates
 docker compose up -d --build
 ```
 
@@ -69,6 +75,8 @@ If you only want the Flask app without Docker, you still need the Selenium conta
 ```bash
 docker compose up -d selenium
 export SELENIUM_REMOTE_URL=http://localhost:4444
+export AWS_REGION=ap-southeast-1
+export S3_BUCKET=your-existing-bucket
 python app.py
 ```
 
@@ -154,6 +162,9 @@ repo_branch     = "main"
 
 root_volume_size = 30
 
+s3_bucket_name = "" # leave empty to let Terraform create a bucket automatically
+s3_key_prefix  = "selenium-templates"
+
 environment_vars = {
   SELENIUM_REMOTE_URL = "http://selenium:4444"
   TARGET_URL          = "https://www.google.com/"
@@ -187,6 +198,8 @@ You should see:
 - web_app_url
 - novnc_url
 - instance_public_ip
+- s3_bucket_name
+- s3_key_prefix
 
 Open web_app_url in browser and click Start Automation.
 
@@ -202,18 +215,18 @@ docker compose ps
 docker compose logs -f
 docker compose logs web -f
 
-# Verify downloaded template logs
-docker compose exec -T web sh -lc 'tail -n 200 /app/logs/automation_steps.log'
+# Verify downloaded files in container
+docker compose exec -T web sh -lc 'find /app/selenium_python/score-templates -maxdepth 1 -type f | head -n 100'
 
-# Verify downloaded files stored in temporary directory
-docker compose exec -T web sh -lc 'find /tmp/automation-data -maxdepth 2 -type f | head -n 100'
+# Verify files uploaded to S3 (AWS CLI must be configured)
+aws s3 ls s3://YOUR_BUCKET/selenium-templates/ --recursive | tail -n 50
 ```
 
-## Data Storage Note
+## S3 Upload Layout
 
-- Downloaded files are stored in temporary container storage at /tmp/automation-data.
-- This data is available while the current container exists.
-- If the container is recreated (for example docker compose up -d --build), temporary files will be removed.
+- Each run gets a session folder derived from the VNC session password.
+- Uploaded files are stored under `S3_KEY_PREFIX/<session-folder>/<template-folder>/`.
+- Example path: `selenium-templates/session-abc123/score-templates/file.xlsx`.
 
 ## Destroy (Stop Charges)
 

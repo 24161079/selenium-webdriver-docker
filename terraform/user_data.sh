@@ -43,9 +43,9 @@ cd /app
 
 # Create environment file for docker-compose
 cat > .env << EOF
-SELENIUM_REMOTE_URL=${environment_vars.SELENIUM_REMOTE_URL}
-TARGET_URL=${environment_vars.TARGET_URL}
-WAIT_SECONDS=${environment_vars.WAIT_SECONDS}
+%{ for key, value in environment_vars ~}
+${key}=${value}
+%{ endfor ~}
 EOF
 
 # Create systemd service for docker-compose

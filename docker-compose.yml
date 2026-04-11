@@ -28,6 +28,11 @@ services:
     environment:
       - SELENIUM_REMOTE_URL=http://selenium:4444
       - FLASK_ENV=production
-      - AUTOMATION_DATA_DIR=/tmp/automation-data
-      - AUTOMATION_STEPS_LOG_FILE=/app/logs/automation_steps.log
+      - AWS_REGION=${AWS_REGION:-ap-southeast-1}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-southeast-1}
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_KEY_PREFIX=${S3_KEY_PREFIX:-selenium-templates}
     restart: unless-stopped
