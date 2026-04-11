@@ -43,9 +43,8 @@ def download_all_templates(driver, folder_name: str) -> None:
     print(MESSAGES.START_DOWNLOAD)
 
     download_root = Path(os.environ.get("DOWNLOAD_ROOT", "/downloads"))
-    download_dir = download_root / folder_name
-    download_dir.mkdir(parents=True, exist_ok=True)
-    print(msg_download_dir(download_dir))
+    download_root.mkdir(parents=True, exist_ok=True)
+    print(msg_download_dir(download_root))
 
     s3_client, s3_bucket, s3_prefix = _build_s3_context()
     session_folder = _resolve_session_folder()
@@ -55,7 +54,6 @@ def download_all_templates(driver, folder_name: str) -> None:
     else:
         print("S3 upload disabled: missing S3_BUCKET env")
 
-    _set_download_dir(driver, download_dir)
     _wait_for_modal_load(driver)
 
     frame = _find_rad_window_frame(driver)
@@ -79,7 +77,7 @@ def download_all_templates(driver, folder_name: str) -> None:
         total_downloaded = _download_all_combinations(
             driver,
             combo_box_ids,
-            download_dir,
+            download_root,
             folder_name,
             session_folder,
             s3_client,
@@ -89,21 +87,6 @@ def download_all_templates(driver, folder_name: str) -> None:
         print(msg_complete(total_downloaded))
     finally:
         driver.switch_to.default_content()
-
-
-def _set_download_dir(driver, download_dir: Path) -> None:
-    try:
-        driver.execute_cdp_cmd(
-            "Page.setDownloadBehavior",
-            {
-                "behavior": "allow",
-                "downloadPath": str(download_dir),
-            },
-        )
-    except Exception:
-        # Remote drivers may not support CDP in all setups.
-        pass
-
 
 def _wait_for_modal_load(driver) -> None:
     print(MESSAGES.WAIT_MODAL)

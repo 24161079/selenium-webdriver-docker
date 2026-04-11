@@ -274,6 +274,8 @@
         let currentNovncUrl = '';
         let vncWindow = null;
         let currentVncPassword = '';
+        let isRunning = false;
+        let isStopping = false;
         const PASSWORD_STORAGE_KEY = 'currentVncPassword';
 
         function setCurrentPassword(value) {
@@ -308,10 +310,13 @@
             }
         }
 
-        function setRunningState(running) {
-            runBtn.disabled = running;
-            reopenBtn.disabled = !running || !currentNovncUrl;
-            cancelBtn.disabled = !running || !currentVncPassword;
+        function setRunningState(running, stopping = false) {
+            isRunning = Boolean(running);
+            isStopping = Boolean(stopping);
+
+            runBtn.disabled = isRunning || isStopping;
+            reopenBtn.disabled = !isRunning || !currentNovncUrl || isStopping;
+            cancelBtn.disabled = !isRunning || !currentVncPassword || isStopping;
         }
 
         function openVncWindow() {
@@ -347,9 +352,11 @@
                     setCurrentPassword('');
                 }
 
-                setRunningState(Boolean(data.running));
+                setRunningState(Boolean(data.running), Boolean(data.stopping));
 
-                if (data.running) {
+                if (data.stopping) {
+                    result.textContent = 'Hệ thống đang dừng phiên trước, vui lòng chờ hoàn tất rồi mới bấm Bắt đầu.';
+                } else if (data.running) {
                     result.textContent = 'Chương trình đang chạy. Nếu không có heartbeat từ trang VNC, hệ thống sẽ tự dừng sau {{ vnc_idle_timeout_seconds }} giây.';
                 }
             } catch (error) {
@@ -366,7 +373,9 @@
 
                 if (!response.ok) {
                     currentNovncUrl = data.novnc_url || currentNovncUrl;
-                    setRunningState(true);
+                    const stoppingState = data.status === 'stopping';
+                    const runningState = stoppingState || data.status === 'busy' || Boolean(data.running);
+                    setRunningState(runningState, stoppingState);
                     result.textContent = 'Lỗi: ' + (data.message || 'Không thể bắt đầu Chương trình');
                     return;
                 }
@@ -397,6 +406,7 @@
             }
 
             setCurrentPassword(password);
+            setRunningState(true, true);
 
             try {
                 const response = await fetch('/vnc/cancel', {
@@ -410,6 +420,7 @@
                     showSecurityNotice('Mật khẩu VNC không đúng. Vui lòng kiểm tra lại.', 'error');
                     markPasswordInput('error');
                     result.textContent = data.message || 'Mật khẩu VNC không đúng.';
+                    setRunningState(true, false);
                     return;
                 }
 
@@ -417,6 +428,7 @@
                     showSecurityNotice(data.message || 'Không thể hủy phiên VNC hiện tại.', 'error');
                     markPasswordInput('error');
                     result.textContent = data.message || 'Không thể hủy phiên VNC hiện tại.';
+                    setRunningState(true, false);
                     return;
                 }
 
@@ -428,6 +440,7 @@
                 showSecurityNotice('Lỗi kết nối khi gửi yêu cầu hủy VNC.', 'error');
                 markPasswordInput('error');
                 result.textContent = 'Lỗi kết nối: ' + error.message;
+                setRunningState(true, false);
             }
         });
 
@@ -435,7 +448,7 @@
             setCurrentPassword(passwordInput.value);
             clearSecurityNotice();
             passwordInput.classList.remove('error', 'success', 'shake');
-            setRunningState(runBtn.disabled);
+            setRunningState(isRunning, isStopping);
         });
 
         setCurrentPassword(localStorage.getItem(PASSWORD_STORAGE_KEY) || '');

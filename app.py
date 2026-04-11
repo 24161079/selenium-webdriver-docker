@@ -24,6 +24,7 @@ last_heartbeat_at = 0.0
 current_vnc_password = None
 current_session_folder = None
 has_valid_heartbeat = False
+is_stopping = False
 
 VNC_IDLE_TIMEOUT_SECONDS = int(os.environ.get("VNC_IDLE_TIMEOUT_SECONDS", "90"))
 VNC_STARTUP_GRACE_SECONDS = int(os.environ.get("VNC_STARTUP_GRACE_SECONDS", "300"))
@@ -133,11 +134,15 @@ def _cleanup_driver_async(driver, session_id: str | None) -> None:
 
 
 def request_stop(reason: str) -> bool:
-    global current_stop_event
+    global is_stopping
 
     with active_jobs_lock:
         stop_event = current_stop_event
+        if is_stopping:
+            return True
         running = active_jobs > 0 and stop_event is not None
+        if running:
+            is_stopping = True
 
     if not running:
         return False
@@ -193,7 +198,7 @@ watchdog_thread.start()
 
 
 def run_google_test(stop_event: threading.Event) -> None:
-    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password, current_session_folder, has_valid_heartbeat
+    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password, current_session_folder, has_valid_heartbeat, is_stopping
 
     try:
         run_pipeline(stop_event=stop_event, on_driver_ready=_set_current_driver)
@@ -217,6 +222,7 @@ def run_google_test(stop_event: threading.Event) -> None:
         current_session_folder = None
         os.environ.pop("SESSION_FOLDER_NAME", None)
         has_valid_heartbeat = False
+        is_stopping = False
 
 
 @app.route("/")
@@ -229,6 +235,8 @@ def vnc_page():
     password = request.args.get("password", "")
 
     with active_jobs_lock:
+        if is_stopping:
+            return render_template("vnc_auth.html", message="Phien dang duoc dong, vui long cho he thong stop xong."), 409
         if active_jobs == 0:
             return render_template("vnc_auth.html", message="Khong co phien VNC dang chay."), 200
 
@@ -251,11 +259,21 @@ def vnc_page():
 
 @app.route("/run", methods=["POST"])
 def run():
-    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password, current_session_folder, has_valid_heartbeat
+    global active_jobs, current_stop_event, current_thread, job_started_at, last_heartbeat_at, current_vnc_password, current_session_folder, has_valid_heartbeat, is_stopping
     host = request.host.split(":")[0]
     novnc_url = _build_vnc_page_url(host)
 
     with active_jobs_lock:
+        if is_stopping:
+            return jsonify(
+                {
+                    "status": "stopping",
+                    "message": "Hệ thống đang dừng phiên trước, vui lòng chờ trong giây lát.",
+                    "active_jobs": active_jobs,
+                    "novnc_url": novnc_url,
+                }
+            ), 409
+
         if active_jobs > 0:
             return jsonify(
                 {
@@ -276,6 +294,7 @@ def run():
         current_session_folder = _build_session_folder(current_vnc_password)
         os.environ["SESSION_FOLDER_NAME"] = current_session_folder
         has_valid_heartbeat = False
+        is_stopping = False
         _write_runtime_log("RUN_STARTED")
 
     current_thread.start()
@@ -296,10 +315,9 @@ def status():
     host = request.host.split(":")[0]
 
     with active_jobs_lock:
-        stop_requested = current_stop_event.is_set() if current_stop_event else False
-        running = active_jobs > 0 and not stop_requested
-        stopping = active_jobs > 0 and stop_requested
+        running = active_jobs > 0
         jobs = active_jobs
+        stopping = is_stopping
 
     return jsonify(
         {
@@ -337,6 +355,10 @@ def heartbeat():
 def cancel_vnc_session():
     payload = request.get_json(silent=True) or {}
     password = payload.get("password", "")
+
+    with active_jobs_lock:
+        if is_stopping:
+            return jsonify({"status": "stopping", "message": "He thong dang stop, vui long doi."}), 202
 
     if not isinstance(password, str) or not password:
         return jsonify({"status": "error", "message": "Vui long nhap mat khau VNC."}), 400

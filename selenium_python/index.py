@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Callable
 
 from selenium import webdriver
@@ -60,24 +61,12 @@ def select_comment_input(driver) -> None:
 
 def build_driver() -> webdriver.Remote:
     options = Options()
-    download_dir = os.environ.get("DOWNLOAD_ROOT", "/home/seluser/Downloads")
-    prefs = {
-        "download.default_directory": download_dir,
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "safebrowsing.enabled": True,
-        "profile.default_content_settings.popups": 0,
-        "profile.default_content_setting_values.automatic_downloads": 1,
-    }
 
     if CONFIG["browser_options"]["headless"]:
         options.add_argument("--headless=new")
 
     options.add_argument("--start-maximized")
     options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-popup-blocking")
-
-    options.add_experimental_option("prefs", prefs)
 
     for arg in CONFIG["browser_options"]["args"]:
         options.add_argument(arg)
@@ -85,6 +74,7 @@ def build_driver() -> webdriver.Remote:
     selenium_url = os.environ.get("SELENIUM_REMOTE_URL", "http://selenium:4444/wd/hub")
     driver = webdriver.Remote(command_executor=selenium_url, options=options)
     driver.maximize_window()
+
     return driver
 
 
@@ -122,6 +112,17 @@ def run_pipeline(stop_event=None, on_driver_ready: Callable | None = None) -> No
             print("[INFO] Automation stopped by request.")
             return
         print(f"Error: {exc}")
+    finally:
+        # Clean up downloaded files after automation completes
+        download_root = Path(os.environ.get("DOWNLOAD_ROOT", "/downloads"))
+        if download_root.exists():
+            for item in download_root.iterdir():
+                if item.is_file():
+                    try:
+                        item.unlink()
+                        print(f"Cleaned: {item.name}")
+                    except Exception as e:
+                        print(f"Failed to clean {item.name}: {e}")
 
 
 if __name__ == "__main__":
